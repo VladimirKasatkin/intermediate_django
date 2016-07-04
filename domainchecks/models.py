@@ -1,11 +1,22 @@
+import datetime
+
 from django.db import models
+from django.db.models import Max, Q
+from django.utils.timezone import now
 
 
-class ActiveManager(models.Manager):
-    """Manager to exclude non-active records."""
+class DomainCheckQuerySet(models.QuerySet):
+    """Custom queryset to filter and annotate domain checks."""
 
-    def get_queryset(self):
-        return super().get_queryset().filter(is_active=True)
+    def active(self):
+        return self.filter(is_active=True)
+
+    def stale(self, cutoff=datetime.timedelta(hours=1)):
+        end_time = now() - cutoff
+        return self.annotate(
+            last_check=Max('checkresult__checked_on')
+        ).filter(
+            Q(last_check__lt=end_time) | Q(last_check__isnull=True))
 
 
 class DomainCheck(models.Model):
@@ -34,8 +45,7 @@ class DomainCheck(models.Model):
         max_length=4, choices=METHOD_CHOICES, default=METHOD_GET)
     is_active = models.BooleanField(default=True)
 
-    objects = models.Manager()
-    active = ActiveManager()
+    objects = DomainCheckQuerySet.as_manager()
 
     def __str__(self):
         return '{method} {url}'.format(
